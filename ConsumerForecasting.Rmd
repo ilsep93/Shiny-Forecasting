@@ -1,5 +1,5 @@
 ---
-title: "Consumer Product Time-Series   Forecasting"
+title: "Consumer Product Time-Series Forecasting"
 author: "Ilse Paniagua"
 date: "`r Sys.Date()`"
 output:
@@ -32,6 +32,7 @@ https://fred.stlouisfed.org/series/APU0000702111
 U.S. Bureau of Labor Statistics, Bread, White, Pan, Per Lb. (453.6 Gm) in U.S. City Average [APU0000702111], retrieved from FRED, Federal Reserve Bank of St. Louis; https://fred.stlouisfed.org/series/APU0000702111, January 14, 2020. 
 
 References:
+
 * Hyndman, R.J., & Athanasopoulos, G. (2019) Forecasting: principles and practice, 3rd edition, OTexts: Melbourne, Australia. OTexts.com/fpp3).
 
 # Data Preparation
@@ -81,7 +82,7 @@ ggplot(data=ts, aes(x=date)) +
   geom_line(aes(y=price_cookies), color="black") +
   labs(y="Price",
        x="Date",
-       title="U.S. City Average price of cookies, bread, flour 1980-2019",
+       title="U.S. City Average price of cookies, bread, flour 1980-2019 (per lb)",
        caption="Source: U.S. Bureau of Labor Statistics"
        ) +
   theme_light()
@@ -91,7 +92,7 @@ ggplot(data=ts, aes(x=date)) +
   geom_line(aes(y=price_cookies), color="black") +
   labs(y="Price",
        x="Date",
-       title="U.S. City Average price of cookies 1980-2019",
+       title="U.S. City Average price of cookies 1980-2019 (per lb)",
        caption="Source: U.S. Bureau of Labor Statistics"
        ) +
   theme_light()
@@ -102,7 +103,7 @@ ggplot(data=ts, aes(x=date)) +
   geom_line(aes(y=price_bread), color="blue") +
   labs(y="Price",
        x="Date",
-       title="U.S. City Average price of bread 1980-2019",
+       title="U.S. City Average price of bread 1980-2019 (per lb)",
        caption="Source: U.S. Bureau of Labor Statistics"
        ) +
   theme_light()
@@ -112,7 +113,7 @@ ggplot(data=ts, aes(x=date)) +
   geom_line(aes(y=price_flour), color="red") +
   labs(y="Price",
        x="Date",
-       title="U.S. City Average price of flour 1980-2019",
+       title="U.S. City Average price of flour 1980-2019 (per lb)",
        caption="Source: U.S. Bureau of Labor Statistics"
        ) +
   theme_light()
@@ -121,7 +122,7 @@ ggplot(data=ts, aes(x=date)) +
 
 * Cookies:
 
-TBD
+The price of cookies increased from about 1.5 dollars per pound in 1980 to over 3.5 dollars per pound in 2019. The ts displays a positive trend and seasonality.
 
 
 * Flour:
@@ -130,7 +131,7 @@ The price of lour increased from about 0.2 cents in January 1980 to about 0.4 ce
 
 * Bread:
 
-TBD
+The bread ts is trended and seasonal. Prices increased from 0.5 cents 1980 to over $1.5 2012, and decreased slightly from 2012 to 2019 to about 1.33 dollars.
 
 
 ## Decomposition
@@ -169,6 +170,7 @@ cookies %>%
        x="Date") +
   theme_light()
 ```
+
 The forecasts using the two models look very similar. But which is more accurate?
 
 To compare the forecast accuracy of ETS and ARIMA models, we use data before December 2014 as our training data and January 2015-December 2019 as our test data.
@@ -286,13 +288,79 @@ A good forecasting method will yield residuals that are:
 1. Uncorrelated
 2. Have a zero mean
 
-If the forecasts are correlated, there is additional information that should be used in computing forecasts. If the residuals do not have a mean of zero, they will be biased. 
+If the forecasts are correlated, there is additional information that should be used in computing forecasts. If the residuals do not have a mean of zero, they will be biased.
 
-We produce a time plot, ACF plot, and histogram of the residuals for our models. We will also perform Portmeanteau tests for autocorrelation.
+For each time-series, we produce a time plot, ACF plot, and histogram of the residuals for our models. We will also perform Ljung-Box tests for autocorrelation.
 
-```{r}
+For the Ljung-Box tests, we use lag parameters as outlined by Rob J Hyndman (https://robjhyndman.com/hyndsight/ljung-box-test/).
+
+He suggests:
+* For non-seasonal time series, use h=min(10,T/5)
+* For seasonal time series, use h=min(2m,T/5),
+
+where m is the length of the seasonality and T is the length of the time-series.
+
+Because all our series our seasonal, we will use a lag of 8 (40/5).
+
+## Cookies
+
+```{r message=FALSE, warning=FALSE}
 cookies%>%
   model(ETS(price_cookies)) %>%
   gg_tsresiduals()
 ```
 
+The graphs show that the model seems to account for all possible information. The mean of the residuals is close to zero and the variation of the residuals stays close to constant across the historical data. The histogram suggests that the residuals are normal. With the exception of two lags that show slight significance, he lack of correlation in the ACF plot suggets that forecasts are acceptable.
+
+We perform a Ljung-Box test to assess whether autocorrelations are significantly different from white noise. The null hypothesis is that the residual series is white noise; therefore failure to reject (large p-value) means that our model is appropriate.
+
+The results of the Ljung-Box test are not significant. Therefore, we conclude that the residuals are not distinguishable from a white noise series.
+
+```{r}
+cookies %>%
+  model(ARIMA(price_cookies)) %>%
+  augment() %>%
+  select(.resid) %>%
+  features(.resid, ljung_box, lag=8, dof=5)
+```
+## Flour
+
+We perform residual diagnostics for the flour dataset using an ARIMA model.
+
+```{r message=FALSE, warning=FALSE}
+flour %>%
+  model(ARIMA(price_flour)) %>%
+  gg_tsresiduals()
+```
+
+
+```{r}
+flour %>%
+  model(ARIMA(price_flour)) %>%
+  augment() %>%
+  select(.resid) %>%
+  features(.resid, ljung_box, lag=8, dof=5)
+```
+The residuals for flour are more problematic. There is evidence that the residuals do not have a mean of zero and have some periods of variability, particularly from 2005-2010 (roughly when the series underwent a level change). The residuals also fail the Ljung-Box test for the ARIMA model. This shows that the model has not perfectly captured the information in the data. However, this is the best model that we have evaluated.
+
+## Bread
+
+We repeat this exercise for the bread time-series. We had selected an ETS model.
+
+```{r message=FALSE, warning=FALSE}
+bread %>%
+  model(ETS(price_bread)) %>%
+  gg_tsresiduals()
+```
+
+```{r}
+bread %>%
+  model(ETS(price_bread)) %>%
+  augment() %>%
+  select(.resid) %>%
+  features(.resid, ljung_box, lag=8, dof=6)
+```
+
+The residuals for the bread dataset seem to have some large outliers based on the time plot and the histogram. A few observations seem to be autocorrelated based on the ACF plot. The residuals bread dataset fail the Ljung-Box test based on an alpha=0.5 value.
+
+Now I will develop a Shiny app to showcase these results!
