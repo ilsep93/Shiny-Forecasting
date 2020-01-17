@@ -1,0 +1,298 @@
+---
+title: "Consumer Product Time-Series   Forecasting"
+author: "Ilse Paniagua"
+date: "`r Sys.Date()`"
+output:
+  prettydoc::html_pretty:
+    theme: architect
+    highlight: github
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(fpp3)
+library(tsibble)
+library(readr)
+library(prettydoc)
+```
+
+This RMarkdown document shows tidy tools for time series data using the `tsibble`, `fable`, and `feasts`packages for time series data frames, tidy forecasting, and feature extraction and statistics.
+
+I used the following data sources.
+
+* Cookies: https://fred.stlouisfed.org/series/APU0000702421
+U.S. Bureau of Labor Statistics, Cookies, Chocolate Chip, Per Lb. (453.6 Gm) in U.S. City Average [APU0000702421], retrieved from FRED, Federal Reserve Bank of St. Louis; https://fred.stlouisfed.org/series/APU0000702421, January 14, 2020. 
+
+* Flour: 
+https://fred.stlouisfed.org/series/APU0000701111
+U.S. Bureau of Labor Statistics, Flour, White, All Purpose, Per Lb. (453.6 Gm) in U.S. City Average [APU0000701111], retrieved from FRED, Federal Reserve Bank of St. Louis; https://fred.stlouisfed.org/series/APU0000701111, January 14, 2020
+
+* Bread: 
+https://fred.stlouisfed.org/series/APU0000702111
+U.S. Bureau of Labor Statistics, Bread, White, Pan, Per Lb. (453.6 Gm) in U.S. City Average [APU0000702111], retrieved from FRED, Federal Reserve Bank of St. Louis; https://fred.stlouisfed.org/series/APU0000702111, January 14, 2020. 
+
+References:
+* Hyndman, R.J., & Athanasopoulos, G. (2019) Forecasting: principles and practice, 3rd edition, OTexts: Melbourne, Australia. OTexts.com/fpp3).
+
+# Data Preparation
+
+```{r message=FALSE}
+#Reading each dataset as a tsibble object
+
+flour <- as_tsibble(read_csv("flour_1980-2019.csv"), index=DATE)
+bread <- as_tsibble(read_csv("bread_1980-2019.csv"), index=DATE)
+cookies <- as_tsibble(read_csv("cookies_1980-2019.csv"), index=DATE)
+```
+
+I combine all three datasets and do some variable renaming. Because forecasting requires that all missing values be explicit rather than implict, I fill in possible time gaps with "NA".
+
+```{r}
+#Joining dataframes and renaming variables
+ts <- cbind(flour, bread, cookies)
+
+#Renaming and dropping variables
+ts <- select(ts, date = DATE, price_flour = APU0000701111, -DATE1, price_bread = APU0000702111, -DATE2, price_cookies = APU0000702421)
+
+#Changing date into year-month format
+#ts$date <- as_date(ts$date)
+ts$date <- yearmonth(ts$date)
+
+#Filling in missing values (none applicable)
+fill_gaps(ts, .full=FALSE)
+```
+
+I creating individual files for each time series. Each file has 480 observations (12 months * 40 years)
+
+```{r}
+flour <- select(ts, date, price_flour)
+bread <- select(ts, date, price_bread)
+cookies <- select(ts, date, price_cookies)
+```
+
+# Plotting the data
+
+Plotting the time series of each dataset.
+
+```{r message=FALSE}
+#Plot with all time series
+ggplot(data=ts, aes(x=date)) +
+  geom_line(aes(y=price_bread), color="blue") +
+  geom_line(aes(y=price_flour), color="red") +
+  geom_line(aes(y=price_cookies), color="black") +
+  labs(y="Price",
+       x="Date",
+       title="U.S. City Average price of cookies, bread, flour 1980-2019",
+       caption="Source: U.S. Bureau of Labor Statistics"
+       ) +
+  theme_light()
+
+#Cookies plot
+ggplot(data=ts, aes(x=date)) +
+  geom_line(aes(y=price_cookies), color="black") +
+  labs(y="Price",
+       x="Date",
+       title="U.S. City Average price of cookies 1980-2019",
+       caption="Source: U.S. Bureau of Labor Statistics"
+       ) +
+  theme_light()
+
+
+#Bread plot
+ggplot(data=ts, aes(x=date)) +
+  geom_line(aes(y=price_bread), color="blue") +
+  labs(y="Price",
+       x="Date",
+       title="U.S. City Average price of bread 1980-2019",
+       caption="Source: U.S. Bureau of Labor Statistics"
+       ) +
+  theme_light()
+
+#Flour plot
+ggplot(data=ts, aes(x=date)) +
+  geom_line(aes(y=price_flour), color="red") +
+  labs(y="Price",
+       x="Date",
+       title="U.S. City Average price of flour 1980-2019",
+       caption="Source: U.S. Bureau of Labor Statistics"
+       ) +
+  theme_light()
+
+```
+
+* Cookies:
+
+TBD
+
+
+* Flour:
+
+The price of lour increased from about 0.2 cents in January 1980 to about 0.4 cents in December 2019.It has some seasonal fluctuations and exhibits an overal positive trend. There was a sharp increase in the price of flour from 2008 to 2009.
+
+* Bread:
+
+TBD
+
+
+## Decomposition
+
+All three time series exhibit a strong seasonability and a positive trend. The remainder term increases in variability as the time series progresses.
+
+```{r}
+cookies %>% STL(price_cookies ~ season(window = Inf)) %>% autoplot()
+```
+
+
+```{r}
+flour %>% STL(price_flour ~ season(window = Inf)) %>% autoplot()
+```
+
+```{r}
+bread %>% STL(price_bread ~ season(window = Inf)) %>% autoplot()
+```
+
+# Defining a model
+
+## Cookies
+
+We obtain forecasts for the next two years using both ARIMA and ETS models. The `ETC()` function selects the model parameters by minimising the AIC_c. The `ARIMA` function in R uses a variation of the Hyndman-Khandakar algorithim to obtain an ARIMA model.
+
+```{r}
+cookies %>%
+  model(
+    ets = ETS(price_cookies),
+    arima = ARIMA(price_cookies)
+  ) %>%
+  forecast(h = "2 years") %>%
+  autoplot(cookies) +
+    labs(title = "Two-year forcasts for price of cookies",
+       y="Price",
+       x="Date") +
+  theme_light()
+```
+The forecasts using the two models look very similar. But which is more accurate?
+
+To compare the forecast accuracy of ETS and ARIMA models, we use data before December 2014 as our training data and January 2015-December 2019 as our test data.
+
+We cannot rely on minimizing the AIC_c to compare between ETC and ARIMA models because they are in different model classes and the likelihood is computed in different ways. Instead, we use time-series cross validation to assess model accuracy.
+
+```{r}
+#Five-year forecasts 2015-2019
+fit.cookies <- cookies %>%
+  filter(date < yearmonth("2014 Dec")) %>%
+  model(
+    ETS(price_cookies),
+    ARIMA(price_cookies)) %>%
+  forecast(h= "5 years")
+ 
+#Obtaining accuracy statistics
+acc.cookies <- fit.cookies %>% accuracy(cookies)
+
+acc.cookies
+```
+
+ARIMA provides more accurate forecasts than ETS for the cookies time series according to all metrics.
+
+The selected model for the cookies ts is an ARIMA(0,1,3)(0,0,1) with drift.
+
+```{r}
+cookies %>%
+  model(ARIMA(price_cookies)) %>% report()
+```
+
+## Flour
+
+For the flour ts, there is a wider discrepancy between ETS and ARIMA forecasts. ETS estimates higher prices for flour than ARIMA.
+
+```{r}
+flour %>%
+  model(
+    ets = ETS(price_flour),
+    arima = ARIMA(price_flour)
+  ) %>%
+  forecast(h = "2 years") %>%
+  autoplot(flour) +
+  labs(title = "Two-year forcasts for price of flour",
+       y="Price",
+       x="Date") +
+  theme_light()
+```
+
+We again assess model accuracy using time-series cross validation.
+
+```{r}
+fit.flour <- flour %>%
+  filter(date < yearmonth("2014 Dec")) %>%
+  model(
+    ETS(price_flour),
+    ARIMA(price_flour)) %>%
+  forecast(h= "5 years")
+ 
+acc.flour <- fit.flour %>% accuracy(flour)
+
+acc.flour
+```
+
+ARIMA again outperforms ETCs for the flour data. An ARIMA(0,1,0)(2,0,0) model will be used for forecasting.
+
+```{r}
+flour %>%
+  model(ARIMA(price_flour)) %>% report()
+```
+
+## Bread
+
+For bread, the ETS and ARIMA models produce similar forecasts.
+
+```{r}
+bread %>%
+  model(
+    ets = ETS(price_bread),
+    arima = ARIMA(price_bread)
+  ) %>%
+  forecast(h = "2 years") %>%
+  autoplot(bread) +
+    labs(title = "Two-year forcasts for price of bread",
+       y="Price",
+       x="Date") +
+  theme_light()
+```
+
+We assess model accuracy using time-series cross validation.
+
+```{r}
+fit.bread <- bread %>%
+  filter(date < yearmonth("2014 Dec")) %>%
+  model(
+    ETS(price_bread),
+    ARIMA(price_bread)) %>%
+  forecast(h= "5 years")
+ 
+acc.bread <- fit.bread %>% accuracy(bread)
+
+acc.bread
+```
+ETS outperforms ARIMA for this dataset. We use an ETS(M,A,N) for this dataset.
+
+```{r}
+bread %>%
+  model(ETS(price_bread)) %>% report()
+```
+
+
+# Residual diagnostics
+
+A good forecasting method will yield residuals that are:
+
+1. Uncorrelated
+2. Have a zero mean
+
+If the forecasts are correlated, there is additional information that should be used in computing forecasts. If the residuals do not have a mean of zero, they will be biased. 
+
+We produce a time plot, ACF plot, and histogram of the residuals for our models. We will also perform Portmeanteau tests for autocorrelation.
+
+```{r}
+cookies%>%
+  model(ETS(price_cookies)) %>%
+  gg_tsresiduals()
+```
+
