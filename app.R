@@ -8,24 +8,6 @@ library(plotly)
 library(magrittr)
 library(DT)
 
-#First tab
-#Inputs:
-#Select dataset
-#Select a model
-#Select forecasting technique (ETS or ARIMA)
-#Select a forecast period
-
-#Output:
-#Plot series over time
-#Plot decomposition
-
-#Second tab
-#Show forecast for 2 years
-#Show accuracy measures
-
-#getwd()
-setwd("/home/ilse/Dropbox/Grad School/UM/Forecast/Shiny-Forecasting")
-
 #Loading data
 
 Flour <- as_tsibble(read_csv("flour_1980-2019.csv"), index=DATE)
@@ -76,7 +58,8 @@ ui <- fluidPage(
         tabsetPanel(
           tabPanel("Forecast", plotOutput("ForecastPlot")), 
           tabPanel("Timeseries Decomposition", plotOutput("dcompPlot")),
-          tabPanel("Model Selection", dataTableOutput("selection"))
+          tabPanel("Model Selection", dataTableOutput("selection")),
+          tabPanel("Residual Diagnostics", plotOutput("residuals"))
         )
       )
     ))
@@ -113,8 +96,8 @@ server <- function(input, output) {
   output$ForecastPlot <- renderPlot({
     
     getDataset() %>%
-    model(ETS= ETS(price),
-          ARIMA = ARIMA(price)) %>%
+      model(ETS= ETS(price),
+            ARIMA = ARIMA(price)) %>%
       forecast(h = paste0(input$ahead," years")) %>%
       autoplot(getDataset()) +
       labs(title = paste0(input$ahead, " year forcasts for price of ", input$dataset),
@@ -138,11 +121,15 @@ server <- function(input, output) {
     
   })
   
+  output$residuals <- renderPlot({
+    getDataset() %>%
+      model(ETS(price)) %>%
+      gg_tsresiduals() +
+      labs(title = "Diagnostics")
+    
+  })
+  
 }
 
 # Run the application 
 shinyApp(ui = ui, server = server)
-
-#ToDo
-#checkbox to add models to forecast plot
-#table of forecasted prices
